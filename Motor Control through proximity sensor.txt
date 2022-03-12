@@ -1,0 +1,76 @@
+#include "m4 libraries/includes.h"
+volatile float duty=0,brd,error,kp=0.03,rpm;
+volatile int duty_value,current_j1,f1=1,j1,current_j0,f0=1,j0;
+volatile int BAUD=9600,brdi,brdf,udata[1]={},i=0,data[4]={},n=4,j,f=0,d,u=0;
+volatile float error,dist;
+
+void move(float command,float control)
+{
+    error=command-control;
+    rpm=error*kp;                                              
+    if(rpm>600)
+        rpm=600;
+    else if(rpm<-600)
+        rpm=-600;
+
+    duty=(rpm/600)*100;
+    duty_value=abs((duty/100)*2499);
+    PWM0_0_CMPA_R=duty_value;
+}
+
+void rx_isr()
+{
+    data[i]=UART0_DR_R & 0xFF;
+    if((data[0]==255))
+    {
+        i=++i%n;
+    }
+    if(data[n-1]==0)
+    {
+        dist=(data[1]|(data[2]<<5))/1023.0*3000;
+    }
+}
+
+int main(void)
+{
+         brd=(80000000/(16.0*BAUD));
+         brdi=(int)(brd);
+         brdf=(int)((brd-brdi)*64+0.5);
+
+
+         SYSCTL_RCGCPWM_R|=0x01;//enable PWM Module
+SYSCTL_RCGCUART_R|=0x01;    //enabling UART0
+ SYSCTL_RCGCGPIO_R|=0xC1;   //enabling PORT H,G,A
+
+         GPIO_PORTA_DEN_R|=0x3;   //The digital functions for the corresponding pin are enabled.
+         GPIO_PORTA_AFSEL_R|=0x3; //alternate function for PC4
+         GPIO_PORTA_PCTL_R|=0x11; //UART selected as alt func
+
+         GPIO_PORTH_DEN_R|=0x7;   //digital enable
+         GPIO_PORTH_DIR_R|=0x7;
+         GPIO_PORTH_DATA_R&=~0x04;
+         GPIO_PORTH_AFSEL_R|=0x1; //alt func
+         GPIO_PORTH_PCTL_R|=0x4;  //pwm
+
+
+         UART0_CTL_R&=~0x01;      //UARTEN disabled
+         UART0_IBRD_R|= brdi;
+         UART0_FBRD_R|= brdf;
+         UART0_LCRH_R|=0x00;      //5 bits by default
+         UART0_IM_R|=0x10;        //enbale RXRIS
+         NVIC_EN0_R |=0x20;       //enable interrupt
+         UART0_CTL_R|=0x01;
+
+         PWM0_0_CTL_R&=0x00;//ensure default
+         PWM0_0_GENA_R|=0xC2; //high on match and low on zero
+         PWM0_0_LOAD_R |=1249;
+         PWM0_0_CTL_R|=0x01;//start timer
+         PWM0_ENABLE_R|=0X1;//enable output to pin
+
+        
+
+    while(1)
+    {
+        move(1000,dist);
+    }
+}
